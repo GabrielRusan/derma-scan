@@ -1,0 +1,29 @@
+Acne
+Actinic keratoses
+Alopecia
+Atopic Dermatitis
+Basal cell carcinoma
+Benign keratosis-like lesions
+Bullous
+Cellulitis Impetigo
+Dermatofibroma
+Eczema
+Exanthems
+Herpes HPV
+Hyperpigmentation
+Light Disease
+Lupus
+Melanocytic nevi
+Melanoma
+Nail Fungus
+Poison Ivy
+Psoriasis
+SJS-TEN
+Scabies lyme
+Systemic Disease
+Tinea Candidiasis
+Urticaria Hives
+Vascular lesions
+Vasculitis
+Vitiligo
+Warts Molluscum
