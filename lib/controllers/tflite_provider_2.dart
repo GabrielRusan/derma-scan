@@ -577,8 +577,9 @@ class TFLiteProvider2 extends ChangeNotifier {
             inputTensor: inputTensor,
           );
 
-          desc.lastProbs.sort((a, b) => b.compareTo(a));
-          List<double> top1And2 = desc.lastProbs.take(2).toList();
+          final sorted =
+              desc.lastProbs.toList()..sort((a, b) => b.compareTo(a));
+          List<double> top1And2 = sorted.take(2).toList();
 
           if (!((top1And2.first - top1And2.last) > 0.3)) {
             return null;
@@ -648,8 +649,9 @@ class TFLiteProvider2 extends ChangeNotifier {
             startLabel: triTop1,
             inputTensor: inputTensor,
           );
-          desc.lastProbs.sort((a, b) => b.compareTo(a));
-          List<double> top1And2 = desc.lastProbs.take(2).toList();
+          final sorted =
+              desc.lastProbs.toList()..sort((a, b) => b.compareTo(a));
+          List<double> top1And2 = sorted.take(2).toList();
 
           if (!((top1And2.first - top1And2.last) > 0.3)) {
             return null;
@@ -724,14 +726,14 @@ class TFLiteProvider2 extends ChangeNotifier {
       final total1 = p1 * d1.routeScoreDownstream;
       final total2 = p2 * d2.routeScoreDownstream;
 
-      if (!((total2 - total2).abs() > 0.1)) {
+      if ((total2 - total2).abs() != 0 && !((total2 - total2).abs() > 0.1)) {
         return null;
       }
 
       final best = (total1 >= total2) ? d1 : d2;
 
-      best.lastProbs.sort((a, b) => b.compareTo(a));
-      List<double> top1And2 = best.lastProbs.take(2).toList();
+      final sorted = best.lastProbs.toList()..sort((a, b) => b.compareTo(a));
+      List<double> top1And2 = sorted.take(2).toList();
 
       if (!((top1And2.first - top1And2.last) > 0.3)) {
         return null;

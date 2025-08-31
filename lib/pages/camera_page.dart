@@ -121,11 +121,10 @@ class _CameraPageState extends State<CameraPage> {
       listen: false,
     );
 
-    // final predictions = await tfliteProvider.classifyWithTriadOnly(
-    //   imagePath: _image!.path,
-    //   saveToDb: true,
-    // );
-    final predictions = null;
+    final predictions = await tfliteProvider.classifyWithTriadOnly(
+      imagePath: _image!.path,
+      saveToDb: true,
+    );
     if (predictions == null) {
       showDialog(
         // ignore: use_build_context_synchronously
@@ -158,6 +157,7 @@ class _CameraPageState extends State<CameraPage> {
               ],
             ),
       );
+      return;
     }
 
     await logProvider.fetchLogs();
@@ -170,7 +170,7 @@ class _CameraPageState extends State<CameraPage> {
       top3ConfidenceSum: 0.0,
       timeStamp: DateTime.now(),
       allPredictions:
-          predictions!.map((e) => AllPrediction.fromJson(e)).toList(),
+          predictions.map((e) => AllPrediction.fromJson(e)).toList(),
     );
 
     Navigator.pushReplacement(

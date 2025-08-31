@@ -22,7 +22,7 @@ class _CustomExpansionWidgetState extends State<CustomExpansionWidget> {
     int count = 0;
     for (var e in widget.allPredictions) {
       final confidence = e.confidence;
-      if (confidence <= 0.05) count++;
+      if (confidence <= 0.01) count++;
     }
     if (count > 1) {
       isOnlyOne = true;
