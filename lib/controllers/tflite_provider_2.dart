@@ -15,7 +15,6 @@ const double DELTA_TRIAD_GATE = 0.10; // ke Triad jika margin (p1-p2) kecil
 const double FAIL_SAFE_LOW_G2S = 0.60; // ke Triad jika p1 General rendah
 
 /// Nama folder model khusus untuk router Triad (bukan node hierarki)
-const String TRIAD_SPECIALIST_KEY = "Triad Specialist";
 
 /// Label-level untuk gate Triad (harus cocok dengan isi labels.txt General & Triad)
 const Set<String> TRIAD_LABELS = {
@@ -383,7 +382,6 @@ class TFLiteProvider2 extends ChangeNotifier {
   // =========================
   bool _isNode(String label) {
     // Triad Specialist itu router, bukan node hierarki
-    if (label == TRIAD_SPECIALIST_KEY) return false;
     return _models.containsKey(label) && (_models[label]?.loaded ?? false);
   }
 
