@@ -2,7 +2,6 @@ import 'package:derma_scan/constant/color.dart';
 import 'package:derma_scan/controllers/diagnose_log_provider.dart';
 import 'package:derma_scan/controllers/navigation_provider.dart';
 import 'package:derma_scan/controllers/onboarding_provider.dart';
-import 'package:derma_scan/controllers/tflite_provider.dart';
 import 'package:derma_scan/controllers/tflite_provider_2.dart';
 import 'package:derma_scan/pages/splash_screen.dart';
 import 'package:flutter/material.dart';
@@ -15,7 +14,6 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
-        ChangeNotifierProvider(create: (_) => TFLiteProvider()),
         ChangeNotifierProvider(create: (_) => TFLiteProvider2()),
         ChangeNotifierProvider(create: (_) => DiagnoseLogProvider()),
         ChangeNotifierProvider(create: (_) => OnboardingProvider()),

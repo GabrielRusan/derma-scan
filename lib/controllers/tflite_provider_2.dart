@@ -524,17 +524,11 @@ class TFLiteProvider2 extends ChangeNotifier {
     );
   }
 
-  // =========================
-  // PIPELINE: Triad-only (tanpa Micro-2)
-  // =========================
-  /// Alur:
-  /// 1) General → ambil top3
-  /// 2) Jika p1 >= MIN_CONF_BYPASS → langsung descend dari c1
-  /// 3) Jika top3 ⊆ TRIAD_LABELS & (margin kecil atau p1 rendah) & Triad tersedia → pakai Triad top1 sebagai start descend
-  /// 4) Selain itu: bandingkan jalur c1 vs c2 (p1*route vs p2*route), ambil yang lebih besar
-  ///
-  /// Return: distribusi terakhir (list {label, confidence}) seperti single-model; DB tersimpan.
-  Future<List<Map<String, dynamic>>?> classifyWithTriadOnly({
+  /// =========================
+  /// PIPELINE: General → (descend jika NODE) → Leaf
+  /// Gate di General & Leaf: p1≥0.80 && margin≥0.25
+  /// =========================
+  Future<List<Map<String, dynamic>>?> classifyImage({
     required String imagePath,
     bool saveToDb = true,
   }) async {
@@ -543,15 +537,42 @@ class TFLiteProvider2 extends ChangeNotifier {
       throw StateError("Node 'General' wajib tersedia.");
     }
 
+    const double P1_THRESHOLD = 0.79;
+    const double MARGIN_THRESHOLD = 0.25;
+
+    bool passGate(List<double> probs, String nodeName, List<String> labels) {
+      if (probs.isEmpty) return false;
+      final idxs = List<int>.generate(probs.length, (i) => i)
+        ..sort((a, b) => probs[b].compareTo(probs[a]));
+      final p1 = probs[idxs[0]];
+      final p2 = idxs.length > 1 ? probs[idxs[1]] : 0.0;
+      final margin = p1 - p2;
+
+      final passed = (p1 >= P1_THRESHOLD) && (margin >= MARGIN_THRESHOLD);
+
+      if (passed) {
+        debugPrint(
+          "[ACCEPTED] Node=$nodeName → Top1=${labels[idxs[0]]} p1=${p1.toStringAsFixed(3)}, "
+          "Top2=${labels[idxs[1]]} p2=${p2.toStringAsFixed(3)}, margin=${margin.toStringAsFixed(3)}",
+        );
+      } else {
+        debugPrint(
+          "[REJECTED] Node=$nodeName → Top1=${labels[idxs[0]]} p1=${p1.toStringAsFixed(3)}, "
+          "Top2=${labels[idxs[1]]} p2=${p2.toStringAsFixed(3)}, margin=${margin.toStringAsFixed(3)}",
+        );
+      }
+
+      return passed;
+    }
+
     _isProcessing = true;
     notifyListeners();
 
     try {
-      // siapkan input mengikuti "General"
+      // ====== GENERAL ======
       final generalInterp = _models["General"]!.interpreter;
       final inputTensor = await _makeInputTensor(imagePath, generalInterp);
 
-      // ===== GENERAL =====
       final gen = await _runModel(
         modelKey: "General",
         inputTensor: inputTensor,
@@ -559,199 +580,66 @@ class TFLiteProvider2 extends ChangeNotifier {
       final gProbs = gen.probs;
       final gLabels = gen.labels;
 
-      final idxs = List<int>.generate(gProbs.length, (i) => i)
-        ..sort((a, b) => gProbs[b].compareTo(gProbs[a]));
-      final i1 = idxs[0],
-          i2 = idxs.length > 1 ? idxs[1] : idxs[0],
-          i3 = idxs.length > 2 ? idxs[2] : idxs[0];
-
-      final c1 = gLabels[i1], c2 = gLabels[i2], c3 = gLabels[i3];
-      final p1 = gProbs[i1], p2 = gProbs[i2];
-      final margin = p1 - p2;
-
-      // 1) BYPASS yakin
-      if (p1 >= MIN_CONF_BYPASS) {
-        if (_isNode(c1)) {
-          final desc = await _descendFromCandidate(
-            startLabel: c1,
-            inputTensor: inputTensor,
-          );
-
-          final sorted =
-              desc.lastProbs.toList()..sort((a, b) => b.compareTo(a));
-          List<double> top1And2 = sorted.take(2).toList();
-
-          if (!((top1And2.first - top1And2.last) > 0.3)) {
-            return null;
-          }
-
-          if (saveToDb) {
-            await _savePipelinePredictionToDb(
-              imagePath: imagePath,
-              finalLabel: desc.finalLabel,
-              lastNode: desc.lastNode,
-              lastProbs: desc.lastProbs,
-              lastLabels: desc.lastLabels,
-            );
-          } else {
-            _applyLastNodeDistribution(
-              lastNode: desc.lastNode,
-              labels: desc.lastLabels,
-              probs: desc.lastProbs,
-            );
-          }
-        } else {
-          // c1 adalah LEAF → pakai distribusi GENERAL sebagai last node
-          if (saveToDb) {
-            await _savePipelinePredictionToDb(
-              imagePath: imagePath,
-              finalLabel: c1,
-              lastNode: "General",
-              lastProbs: gProbs,
-              lastLabels: gLabels,
-            );
-          } else {
-            _applyLastNodeDistribution(
-              lastNode: "General",
-              labels: gLabels,
-              probs: gProbs,
-            );
-          }
-        }
-        return _predictions ?? [];
-      }
-
-      // 2) Gate ke TRIAD jika top-3 ⊆ TRIAD dan kondisi margin/low-conf terpenuhi
-      final top3SetOk =
-          TRIAD_LABELS.contains(c1) &&
-          TRIAD_LABELS.contains(c2) &&
-          TRIAD_LABELS.contains(c3);
-
-      if (top3SetOk &&
-          (margin < DELTA_TRIAD_GATE || p1 < FAIL_SAFE_LOW_G2S) &&
-          isModelLoaded(TRIAD_SPECIALIST_KEY)) {
-        final tri = await _runModel(
-          modelKey: TRIAD_SPECIALIST_KEY,
-          inputTensor: inputTensor,
-        );
-        int s1 = 0;
-        double mv = tri.probs[0];
-        for (int i = 1; i < tri.probs.length; i++) {
-          if (tri.probs[i] > mv) {
-            mv = tri.probs[i];
-            s1 = i;
-          }
-        }
-        final triTop1 = tri.labels[s1];
-
-        if (_isNode(triTop1)) {
-          final desc = await _descendFromCandidate(
-            startLabel: triTop1,
-            inputTensor: inputTensor,
-          );
-          final sorted =
-              desc.lastProbs.toList()..sort((a, b) => b.compareTo(a));
-          List<double> top1And2 = sorted.take(2).toList();
-
-          if (!((top1And2.first - top1And2.last) > 0.3)) {
-            return null;
-          }
-          if (saveToDb) {
-            await _savePipelinePredictionToDb(
-              imagePath: imagePath,
-              finalLabel: desc.finalLabel,
-              lastNode: desc.lastNode,
-              lastProbs: desc.lastProbs,
-              lastLabels: desc.lastLabels,
-            );
-          } else {
-            _applyLastNodeDistribution(
-              lastNode: desc.lastNode,
-              labels: desc.lastLabels,
-              probs: desc.lastProbs,
-            );
-          }
-        } else {
-          // triTop1 LEAF → pakai distribusi TRIAD sebagai last node
-          if (saveToDb) {
-            await _savePipelinePredictionToDb(
-              imagePath: imagePath,
-              finalLabel: triTop1,
-              lastNode: TRIAD_SPECIALIST_KEY,
-              lastProbs: tri.probs,
-              lastLabels: tri.labels,
-            );
-          } else {
-            _applyLastNodeDistribution(
-              lastNode: TRIAD_SPECIALIST_KEY,
-              labels: tri.labels,
-              probs: tri.probs,
-            );
-          }
-        }
-        return _predictions ?? [];
-      }
-
-      // 3) Fallback: bandingkan jalur c1 vs c2 (p1*route vs p2*route)
-      final d1 =
-          _isNode(c1)
-              ? await _descendFromCandidate(
-                startLabel: c1,
-                inputTensor: inputTensor,
-              )
-              : DescendResult(
-                finalLabel: c1,
-                routeScoreDownstream: 1.0, // tidak turun lagi
-                lastNode: "General", // parent = General
-                lastProbs: gProbs,
-                lastLabels: gLabels,
-                logs: const [],
-              );
-
-      final d2 =
-          _isNode(c2)
-              ? await _descendFromCandidate(
-                startLabel: c2,
-                inputTensor: inputTensor,
-              )
-              : DescendResult(
-                finalLabel: c2,
-                routeScoreDownstream: 1.0,
-                lastNode: "General",
-                lastProbs: gProbs,
-                lastLabels: gLabels,
-                logs: const [],
-              );
-
-      final total1 = p1 * d1.routeScoreDownstream;
-      final total2 = p2 * d2.routeScoreDownstream;
-
-      if ((total2 - total2).abs() != 0 && !((total2 - total2).abs() > 0.1)) {
+      // Gate di GENERAL
+      if (!passGate(gProbs, "General", gLabels)) {
         return null;
       }
 
-      final best = (total1 >= total2) ? d1 : d2;
+      // Ambil top-1 General
+      final gi = List<int>.generate(gProbs.length, (i) => i)
+        ..sort((a, b) => gProbs[b].compareTo(gProbs[a]));
+      final int i1 = gi[0];
+      final String c1 = gLabels[i1];
 
-      final sorted = best.lastProbs.toList()..sort((a, b) => b.compareTo(a));
-      List<double> top1And2 = sorted.take(2).toList();
+      // === Jika c1 NODE → turun ke leaf ===
+      if (_isNode(c1)) {
+        final desc = await _descendFromCandidate(
+          startLabel: c1,
+          inputTensor: inputTensor,
+        );
 
-      if (!((top1And2.first - top1And2.last) > 0.3)) {
+        // Gate di LEAF
+        if (!passGate(desc.lastProbs, desc.lastNode, desc.lastLabels)) {
+          return null;
+        }
+
+        if (saveToDb) {
+          await _savePipelinePredictionToDb(
+            imagePath: imagePath,
+            finalLabel: desc.finalLabel,
+            lastNode: desc.lastNode,
+            lastProbs: desc.lastProbs,
+            lastLabels: desc.lastLabels,
+          );
+        } else {
+          _applyLastNodeDistribution(
+            lastNode: desc.lastNode,
+            labels: desc.lastLabels,
+            probs: desc.lastProbs,
+          );
+        }
+        return _predictions ?? [];
+      }
+
+      // === Jika c1 LEAF langsung dari General ===
+      // Gate leaf pakai distribusi General juga
+      if (!passGate(gProbs, "General-Leaf", gLabels)) {
         return null;
       }
 
       if (saveToDb) {
         await _savePipelinePredictionToDb(
           imagePath: imagePath,
-          finalLabel: best.finalLabel,
-          lastNode: best.lastNode,
-          lastProbs: best.lastProbs,
-          lastLabels: best.lastLabels,
+          finalLabel: c1,
+          lastNode: "General",
+          lastProbs: gProbs,
+          lastLabels: gLabels,
         );
       } else {
         _applyLastNodeDistribution(
-          lastNode: best.lastNode,
-          labels: best.lastLabels,
-          probs: best.lastProbs,
+          lastNode: "General",
+          labels: gLabels,
+          probs: gProbs,
         );
       }
       return _predictions ?? [];

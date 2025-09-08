@@ -121,7 +121,7 @@ class _CameraPageState extends State<CameraPage> {
       listen: false,
     );
 
-    final predictions = await tfliteProvider.classifyWithTriadOnly(
+    final predictions = await tfliteProvider.classifyImage(
       imagePath: _image!.path,
       saveToDb: true,
     );
