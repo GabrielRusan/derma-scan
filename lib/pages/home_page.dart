@@ -74,8 +74,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                     SizedBox(width: 12),
                     Text(
-                      // '${greetingByTime()}, ${nama ?? ''}',
-                      'test update, ${nama ?? ''}',
+                      '${greetingByTime()}, ${nama ?? ''}',
+                      // 'test update, ${nama ?? ''}',
                       style: GoogleFonts.eduNswActFoundation(
                         fontWeight: FontWeight.w600,
                         fontSize: 22,
